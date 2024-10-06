@@ -3,13 +3,14 @@ import shutil
 from pathlib import Path
 from typing import Union
 from zipfile import ZipFile
-from torchvision import transforms, datasets
-import gdown
+
+from torch.utils.data import DataLoader, random_split
 import lightning as L
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader,random_split
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
+from torchvision.datasets.utils import download_and_extract_archive
 
 
 class DogImageDataModule(L.LightningModule):
@@ -41,43 +42,29 @@ class DogImageDataModule(L.LightningModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        self._dataset = None
 
     def prepare_data(self):
-        url = "https://drive.google.com/uc?export=download&id=1Bu3HQmZ6_XP-qnEuCVJ4Bg4641JuoPbx"
-        file_path = self.data_dir.parent / "data.zip"
-        extracted_dir = self.data_dir 
-        print("extracted_dir", extracted_dir  )
-        print("file_path", file_path)
-        if not extracted_dir.exists():
-            # Download and extract only if the dataset doesn't exist
-            gdown.download(url, str(file_path), quiet=False)
-            with ZipFile(file_path, "r") as file:
-                file.extractall(self.data_dir)
-            file_path.unlink()  # Remove zip file after extraction
-        else:
-            print("Dataset already exists")
+        dataset_path = self.data_dir / "dogbreed"
+        if not dataset_path.exists():
+            download_and_extract_archive(
+                url="https://drive.google.com/uc?export=download&id=1Bu3HQmZ6_XP-qnEuCVJ4Bg4641JuoPbx",
+                download_root=self.data_dir,
+                remove_finished=True,
+            )
 
-    
     def setup(self, stage: str):
-
-        # Create splits from a single directory
-        full_dataset = datasets.ImageFolder(root=self.data_dir/"dataset", transform=self.train_transform)
-        print(full_dataset.classes)
-        train_size = int(self.train_split * len(full_dataset))
-        val_size = int(self.val_split * len(full_dataset))
-        test_size = len(full_dataset) - train_size - val_size
-        train_dataset, val_dataset, test_dataset = random_split(full_dataset, [train_size, val_size, test_size])
-        
-        if stage == "fit" or stage is None:
-            self.train_dataset = train_dataset
-            self.val_dataset = val_dataset
-        if stage == "test" or stage is None:
-            self.test_dataset = test_dataset
-        
-        self.class_names = train_dataset.classes if hasattr(train_dataset, 'classes') else None
-        print("+"*50)
-        print(self.class_names)
-        print("+"*50)
+        if self._dataset is None:
+            self._dataset = ImageFolder(
+                root=self.data_dir / "dogbreed" / "train",
+                transform=self.train_transform,
+            )
+            train_size = int(self._splits[0] * len(self._dataset))
+            val_size = int(self._splits[1] * len(self._dataset))
+            test_size = len(self._dataset) - train_size - val_size
+            self.train_dataset, self.val_dataset, self.test_dataset = random_split(
+                self._dataset, [train_size, val_size, test_size]
+            )
 
     def train_dataloader(self):
         return DataLoader(

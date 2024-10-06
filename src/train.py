@@ -55,7 +55,10 @@ def train(
     datamodule: L.LightningDataModule,
 ):
     log.info("Starting training!")
-    trainer.fit(model, datamodule)
+    # Add this line to set up the datamodule
+    # datamodule.prepare_data()
+    # datamodule.setup(stage="fit")
+    trainer.fit(model, datamodule=datamodule)
     train_metrics = trainer.callback_metrics
     log.info(f"Training metrics:\n{train_metrics}")
 
@@ -68,6 +71,8 @@ def test(
     datamodule: L.LightningDataModule,
 ):
     log.info("Starting testing!")
+    # Add this line to set up the datamodule for testing
+    # datamodule.setup(stage="test")
     if trainer.checkpoint_callback.best_model_path:
         log.info(
             f"Loading best checkpoint: {trainer.checkpoint_callback.best_model_path}"

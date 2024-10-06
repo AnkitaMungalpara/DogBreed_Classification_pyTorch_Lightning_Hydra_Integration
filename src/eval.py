@@ -1,65 +1,46 @@
-import argparse
+import logging
+import hydra
+from omegaconf import DictConfig
+import pytorch_lightning as pl
 
-import lightning as L
-import torch
+import rootutils
+rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
-from datamodules.dogbreed import DogImageDataModule
-from models.timm_classifier import DogClassifier
-from utils.pylogger import get_pylogger
+# Imports that require root directory setup
+from src.utils.logging_utils import setup_logger, task_wrapper
 
-log = get_pylogger(__name__)
+log = logging.getLogger(__name__)
 
-
-def main(args):
-
-    # 1. data module
-    data_module = DogImageDataModule(num_workers=2, batch_size=16)
-
-    # 2. set up the data module for validation data
-    data_module.setup(stage="fit")
-
-    # 3. validation datset
-    val_dataset = data_module.val_dataset
-
-    # 4. data loader
-    val_data_loader = data_module.val_dataloader()
-
-    # 5. load model
-    model = DogClassifier.load_from_checkpoint(args.ckpt_path)
-    model.to("cuda" if torch.cuda.is_available() else "cpu")
-
-    # 6. Trainer
-    trainer = L.Trainer(
-        max_epochs=1,
-        log_every_n_steps=10,
-        accelerator="auto",
-    )
-
-    # 7. evaluate the module
-    results = trainer.test(
-        model=model,
-        datamodule=data_module,
-    )
-
-    log.info("Validation is completed!!!")
-    log.info(f"validation results: {results}")
-
+@task_wrapper
+@hydra.main(version_base="1.3", config_path="../configs", config_name="eval")
+def main(cfg: DictConfig) -> None:
+    """Evaluation function using Hydra configuration."""
+    
+    # Instantiate datamodule
+    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
+    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.data)
+    
+    # Instantiate model
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    model: pl.LightningModule = hydra.utils.instantiate(cfg.model)
+    
+    # Load model from checkpoint
+    log.info(f"Loading model from checkpoint: {cfg.ckpt_path}")
+    model = type(model).load_from_checkpoint(cfg.ckpt_path)
+    
+    # Instantiate trainer
+    log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
+    trainer: pl.Trainer = hydra.utils.instantiate(cfg.trainer)
+    
+    # Set up the data module for test data
+    datamodule.setup(stage="test")
+    
+    # Evaluate the model
+    log.info("Starting evaluation!")
+    results = trainer.test(model=model, datamodule=datamodule)
+    
+    log.info("Evaluation completed!")
+    log.info(f"Evaluation results: {results}")
 
 if __name__ == "__main__":
-
-    """
-    This function parses command line arguments for the model checkpoint path and calls the main function to perform evaluation on images.
-
-    """
-
-    parser = argparse.ArgumentParser(description="Performs evaluation on images")
-
-    parser.add_argument(
-        "--ckpt_path",
-        type=str,
-        default="model/dog_breed_classifier_model.ckpt",
-        help="path to the model checkpoint",
-    )
-
-    args = parser.parse_args()
-    main(args)
+    main()

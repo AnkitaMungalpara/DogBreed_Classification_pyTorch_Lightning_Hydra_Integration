@@ -1,17 +1,22 @@
-import argparse
-import os
 import random
-from typing import List, Tuple
-
-import matplotlib.pyplot as plt
+from typing import Tuple
+from pathlib import Path
+import logging
+import hydra
+from omegaconf import DictConfig
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from PIL import Image
-from torchvision import transforms
+import matplotlib.pyplot as plt
 
-from datamodules.dogbreed import DogImageDataModule
-from models.timm_classifier import DogClassifier
+import rootutils
+rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+
+# Imports that require root directory setup
+from src.utils.logging_utils import setup_logger, task_wrapper
+
+log = logging.getLogger(__name__)
+
 
 # Define class labels
 CLASS_LABELS = [
@@ -106,73 +111,45 @@ def save_prediction(
     plt.close()
 
 
-def main(args):
-    """
-    Main function to load a trained model and perform inference on sample images.
-
-    Args:
-        args: Command-line arguments parsed by argparse.
-    """
-
-    # Load model
-    model = DogClassifier.load_from_checkpoint(args.ckpt_path)
-    model.to("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Create a directory for storing predictions if not exists
-    os.makedirs(args.output_folder, exist_ok=True)
-
-    # 1. Initialize the data module
-    data_module = DogImageDataModule(num_workers=2, batch_size=16)
-
-    # 2. Set up the data module for validation data
-    data_module.setup(stage="fit")
-
-    # 3. Retrieve the validation dataset
-    val_dataset = data_module.val_dataset
-
+@hydra.main(version_base="1.3", config_path="../configs", config_name="infer")
+def main(cfg: DictConfig) -> None:
+    """Main function for inference using Hydra configuration."""
+    
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    model = hydra.utils.instantiate(cfg.model)
+    
+    log.info(f"Loading model from checkpoint: {cfg.ckpt_path}")
+    # Change this line
+    model = type(model).load_from_checkpoint(cfg.ckpt_path)
+    # model.to(cfg.trainer.accelerator)
+    
+    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
+    datamodule: pl.LightningDataModule = hydra.utils.instantiate(cfg.data)
+    
+    # Set up the data module for validation data
+    datamodule.setup(stage="test")
+    test_dataset = datamodule.test_dataset
+    
+    # Create output directory
+    output_folder = Path(cfg.paths.root_dir) / "predictions"
+    output_folder.mkdir(exist_ok=True)
+    
     # Get the indices for sampling
-    num_samples = min(args.num_samples, len(val_dataset))  # Limit to available images
-    sampled_indices = random.sample(range(len(val_dataset)), num_samples)
-
+    num_samples = min(cfg.num_samples, len(test_dataset))
+    sampled_indices = random.sample(range(len(test_dataset)), num_samples)
+    
     for idx in sampled_indices:
-        img, label_index = val_dataset[idx]  # Get the image and its label index
+        img, label_index = test_dataset[idx]
         img_tensor = img.unsqueeze(0).to(model.device)
-
-        # Convert label index to actual label
+        
         actual_label = CLASS_LABELS[label_index]
-
         predicted_label, confidence = inference(model, img_tensor)
-
-        # Saving the prediction image
-        output_image_path = os.path.join(
-            args.output_folder, f"sample_{idx}_prediction.png"
-        )
-
-        save_prediction(
-            img, actual_label, predicted_label, confidence, output_image_path
-        )
-
+        
+        output_image_path = output_folder / f"sample_{idx}_prediction.png"
+        
+        save_prediction(img, actual_label, predicted_label, confidence, str(output_image_path))
+        
+    log.info(f"Predictions saved in {output_folder}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Dog Breed Classification Inference")
-
-    parser.add_argument(
-        "--output_folder",
-        type=str,
-        default="predictions",
-        help="Path to save prediction images",
-    )
-
-    parser.add_argument(
-        "--ckpt_path",
-        type=str,
-        default="model/dog_breed_classifier_model.ckpt",
-        help="path to the model checkpoint",
-    )
-
-    parser.add_argument(
-        "--num_samples", type=int, default=10, help="Number of samples to process"
-    )
-
-    args = parser.parse_args()
-    main(args)
+    main()
