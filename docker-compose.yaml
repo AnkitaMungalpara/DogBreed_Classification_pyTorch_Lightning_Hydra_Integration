@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  train:
+    # Train service
+    build:
+      context: .
+      dockerfile: Dockerfile.train
+    shm_size: "2gb"
+    volumes:
+      - host:/opt/mount
+      - ./model:/opt/mount/model
+      - ./data:/opt/mount/data
+
+  evaluate:
+    # Evaluate service
+    build:
+      context: .
+      dockerfile: Dockerfile.eval
+    volumes:
+      - host:/opt/mount
+      - ./model:/opt/mount/model
+      - ./data:/opt/mount/data
+
+  infer:
+    # Inference service
+    build:
+      context: .
+      dockerfile: Dockerfile.infer
+    volumes:
+      - host:/opt/mount
+      - ./data:/opt/mount/data
+      - ./predictions:/opt/mount/results
+
+volumes:
+  host:

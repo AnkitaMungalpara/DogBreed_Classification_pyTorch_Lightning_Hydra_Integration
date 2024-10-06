@@ -1,0 +1,9 @@
+_target_: src.datamodules.dogbreed.DogImageDataModule
+
+data_dir: ${data_dir}/dogbreed  # This assumes you have a base data_dir defined elsewhere
+num_workers: 4
+batch_size: 32
+train_split: 0.7
+val_split: 0.15
+test_split: 0.15
+pin_memory: True
