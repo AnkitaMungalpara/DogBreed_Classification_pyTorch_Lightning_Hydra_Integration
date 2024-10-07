@@ -22,6 +22,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Final stage
 FROM python:3.12-slim-bookworm
 
+# Set PROJECT_ROOT environment variable
+ENV PROJECT_ROOT=/app
+
 # Copy the application from the builder
 COPY --from=builder --chown=app:app /app /app
 
@@ -30,3 +33,22 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Set the working directory
 WORKDIR /app
+
+# Install additional dependencies for evaluation
+RUN apt-get update && apt-get install -y \
+	libgl1-mesa-glx \
+	libglib2.0-0 \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Create a volume for data
+VOLUME /app/data
+
+# Create necessary directories
+RUN mkdir -p /app/checkpoints
+
+# Create a dummy checkpoint file for testing
+RUN touch /app/checkpoints/best_model.ckpt
+
+# Set the entrypoint to run tests
+ENTRYPOINT ["pytest"]
+CMD ["tests/"]
