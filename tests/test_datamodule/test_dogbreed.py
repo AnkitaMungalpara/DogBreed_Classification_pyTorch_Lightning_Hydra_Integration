@@ -1,24 +1,40 @@
 import pytest
 from pathlib import Path
-
-import rootutils
+import os
 
 # Setup root directory
-root = rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+root = Path("/app")  # This matches the WORKDIR in the Dockerfile
 
 from src.datamodules.dogbreed import DogImageDataModule
 
 @pytest.fixture
 def datamodule():
-    data_dir = root / "data" / "dogbreed"
-    return DogImageDataModule(data_dir=data_dir, batch_size=32)
+    # Use the data_dir from catdog.yaml, but with the Docker path
+    data_dir = Path("/app/data/dogbreed")
+    return DogImageDataModule(
+        data_dir=str(data_dir),
+        batch_size=32,
+        num_workers=0,  # Set to 0 for debugging
+        train_split=0.7,
+        val_split=0.15,
+        test_split=0.15,
+        pin_memory=False  # Set to False for debugging
+    )
 
 def test_dogbreed_datamodule_init(datamodule):
     assert isinstance(datamodule, DogImageDataModule)
-    assert datamodule.data_dir == root / "data" / "dogbreed"
+    assert str(datamodule.data_dir) == "/app/data/dogbreed"
     assert datamodule.batch_size == 32
+    assert datamodule.num_workers == 0
+    assert datamodule.train_split == 0.7
+    assert datamodule.val_split == 0.15
+    assert datamodule.test_split == 0.15
+    assert datamodule.pin_memory == False
 
 def test_dogbreed_datamodule_setup(datamodule):
+    # Check if the data directory exists
+    assert os.path.exists(datamodule.data_dir), f"Data directory {datamodule.data_dir} does not exist"
+    
     datamodule.setup(stage="fit")
     assert datamodule.train_dataset is not None
     assert datamodule.val_dataset is not None
@@ -38,6 +54,12 @@ def test_dogbreed_datamodule_dataloaders(datamodule):
     assert val_loader is not None
     assert test_loader is not None
 
-    batch = next(iter(train_loader))
-    assert len(batch) == 2  # (images, labels)
-    assert batch[0].shape[1:] == (3, 224, 224)  # (batch_size, channels, height, width)
+    try:
+        batch = next(iter(train_loader))
+        assert len(batch) == 2  # (images, labels)
+        assert batch[0].shape[1:] == (3, 224, 224)  # (batch_size, channels, height, width)
+    except Exception as e:
+        pytest.fail(f"Failed to get batch from train_loader: {str(e)}")
+
+if __name__ == "__main__":
+    pytest.main([__file__])
